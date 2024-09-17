@@ -1,0 +1,39 @@
+name: eShopOnWeb Build and Test
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Configure Git for push
+      run: |
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "GitHub Actions Bot"
+    
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '8.0.x'
+        include-prerelease: true
+
+    - name: Build with dotnet
+      run: dotnet build ./eShop.sln --output buildOutput
+    
+    - name: Generate SBOM
+      run: |
+        curl -Lo $RUNNER_TEMP/sbom-tool https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-linux-x64
+        chmod +x $RUNNER_TEMP/sbom-tool
+        $RUNNER_TEMP/sbom-tool generate -b ./buildOutput -bc . -pn Test -pv 1.0.0 -ps kpmg
+
+    - name: Commit and Push SBOM
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      run: |
+        mv buildOutput/_manifest/spdx_2.2/manifest.spdx.json ./sbom.json
+        git add sbom.json
+        git commit -m "Add SBOM file ${{ github.sha }}"
+        git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git
